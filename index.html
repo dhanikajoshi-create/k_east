@@ -456,5 +456,202 @@
         });
         setBounds();
         </script>
-    </body>
+   <!-- STEP 1: Attribute Panel & Index for your qgis2web map
+     Paste this whole block near the end of index.html (just before </body>).
+     It adds a clean sidebar to choose a LAYER and one ATTRIBUTE, then lists
+     values for that attribute. Click a row to zoom to that feature and open a popup. -->
+
+<style>
+  /* ——— Panel styles ——— */
+  #attrPanel {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: 320px;
+    max-height: calc(100% - 24px);
+    overflow: hidden;
+    z-index: 1001; /* above default Leaflet controls */
+    background: #fff;
+    border: 1px solid #e5e7eb; /* gray-200 */
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.08);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  }
+  #attrPanel header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  #attrPanel .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+  #attrPanel label { font-size: 12px; color: #6b7280; }
+  #attrPanel select, #attrPanel input[type="text"] {
+    width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px;
+  }
+  #attrPanel .list { overflow: auto; max-height: 320px; border: 1px solid #f0f0f0; border-radius: 10px; }
+  #attrPanel .row { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px dashed #eee; cursor: pointer; }
+  #attrPanel .row:hover { background: #f9fafb; }
+  #attrPanel .seq { width: 2.6em; opacity: .65; font-variant-numeric: tabular-nums; }
+  #attrPanel .val { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #attrPanel .footer { padding: 8px 12px; border-top: 1px solid #f0f0f0; font-size: 12px; color: #6b7280; display:flex; justify-content:space-between; align-items:center; }
+  #attrPanel .pill { font-size: 11px; padding: 2px 8px; background: #f3f4f6; border-radius: 999px; }
+  #attrPanel .toggle { border: none; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; }
+  @media (max-width: 640px){ #attrPanel { left: 8px; right: 8px; width: auto; } }
+</style>
+
+<!-- ——— Panel markup ——— -->
+<div id="attrPanel" class="leaflet-top leaflet-left">
+  <header>
+    <strong>Data Viewer</strong>
+    <button id="attrPanelToggle" class="toggle" title="Collapse">–</button>
+  </header>
+  <div class="body">
+    <div>
+      <label for="layerSelect">Layer</label>
+      <select id="layerSelect"></select>
+    </div>
+    <div>
+      <label for="attributeSelect">Attribute</label>
+      <select id="attributeSelect"></select>
+    </div>
+    <input id="searchInput" type="text" placeholder="Filter values…" />
+    <div class="list" id="indexList" role="list"></div>
+  </div>
+  <div class="footer">
+    <span id="stats" class="pill">0 items</span>
+    <span style="opacity:.6; font-size:11px;">Click a row → zoom</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  // Ensure Leaflet map is present (qgis2web creates a global `map`)
+  if (!window.map || !window.L) return;
+
+  // 1) Map your qgis2web layer variables to friendly names.
+  //    Replace the right-hand side if your variables have different names.
+  //    TIP: In index.html, search for:  var layer_   to discover names.
+  const registry = {
+    "Buildings": (window.layer_Buildings_1 || window.layer_Buildings || null),
+    "Vegetation": (window.layer_Vegetation_2 || window.layer_Vegetation || null)
+  };
+
+  // Remove missing layers from the registry
+  Object.keys(registry).forEach(k => { if(!registry[k]) delete registry[k]; });
+
+  // ——— Elements ———
+  const els = {
+    panel: document.getElementById('attrPanel'),
+    toggle: document.getElementById('attrPanelToggle'),
+    layer: document.getElementById('layerSelect'),
+    attr: document.getElementById('attributeSelect'),
+    search: document.getElementById('searchInput'),
+    list: document.getElementById('indexList'),
+    stats: document.getElementById('stats')
+  };
+
+  // ——— Helpers ———
+  function getAttributes(geoLayer){
+    // sample first feature to derive property keys
+    let attrs = new Set();
+    let gotOne = false;
+    if (!geoLayer) return [];
+    geoLayer.eachLayer(l => {
+      if (!gotOne && l && l.feature && l.feature.properties){
+        Object.keys(l.feature.properties).forEach(k => attrs.add(k));
+        gotOne = true;
+      }
+    });
+    return Array.from(attrs).sort();
+  }
+
+  function getFeatureLayers(geoLayer){
+    const out = [];
+    if (!geoLayer) return out;
+    geoLayer.eachLayer(l => { if(l && l.feature) out.push(l); });
+    return out;
+  }
+
+  function valueFor(featureLayer, attr){
+    const p = featureLayer && featureLayer.feature && featureLayer.feature.properties;
+    return p ? p[attr] : undefined;
+  }
+
+  function popupLatLng(fl){
+    try{
+      if (fl.getBounds) return fl.getBounds().getCenter();
+      if (fl.getLatLng) return fl.getLatLng();
+    }catch(e){}
+    return map.getCenter();
+  }
+
+  // ——— UI population ———
+  Object.keys(registry).forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name; els.layer.appendChild(opt);
+  });
+
+  function populateAttributeSelect(){
+    const name = els.layer.value; const layer = registry[name];
+    els.attr.innerHTML = '';
+    const attrs = getAttributes(layer);
+    attrs.forEach(a => { const o = document.createElement('option'); o.value = a; o.textContent = a; els.attr.appendChild(o); });
+  }
+
+  function renderList(){
+    const layerName = els.layer.value; const layer = registry[layerName];
+    const attr = els.attr.value; const q = els.search.value.trim().toLowerCase();
+    const features = getFeatureLayers(layer);
+    els.list.innerHTML = '';
+    let shown = 0;
+
+    features.forEach((fl, idx) => {
+      const v = valueFor(fl, attr);
+      const vTxt = (v === undefined || v === null || v === '') ? '—' : String(v);
+      if (q && vTxt.toLowerCase().indexOf(q) === -1) return;
+      shown++;
+
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.setAttribute('role','listitem');
+      row.innerHTML = `<span class="seq">${idx+1}</span><span class="val" title="${vTxt}">${vTxt}</span>`;
+
+      row.addEventListener('click', () => {
+        try{
+          if (fl.getBounds) map.fitBounds(fl.getBounds(), {maxZoom: 19, padding:[20,20]});
+          else if (fl.getLatLng) map.setView(fl.getLatLng(), Math.max(map.getZoom(), 18));
+          const html = `<div><strong>${layerName}</strong><br>${attr}: ${vTxt}</div>`;
+          L.popup().setLatLng(popupLatLng(fl)).setContent(html).openOn(map);
+        } catch(e) { console.warn(e); }
+      });
+
+      els.list.appendChild(row);
+    });
+
+    els.stats.textContent = `${shown} of ${features.length} features`;
+  }
+
+  // ——— Events ———
+  els.layer.addEventListener('change', () => { populateAttributeSelect(); renderList(); });
+  els.attr.addEventListener('change', renderList);
+  els.search.addEventListener('input', renderList);
+  els.toggle.addEventListener('click', () => {
+    const body = els.panel.querySelector('.body');
+    if (body.style.display === 'none'){ body.style.display = 'block'; els.toggle.textContent = '–'; }
+    else { body.style.display = 'none'; els.toggle.textContent = '+'; }
+  });
+
+  // ——— Init ———
+  if (els.layer.options.length){
+    populateAttributeSelect();
+    renderList();
+  } else {
+    // Helpful message if registry mapping wasn't found
+    els.list.innerHTML = '<div class="row"><span class="val">⚠️ Update the layer mapping in the script (search for <b>var layer_</b> in index.html) so Buildings/Vegetation point to your actual layer variables.</span></div>';
+  }
+})();
+</script>
+ </body>
 </html>
