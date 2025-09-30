@@ -533,10 +533,10 @@
   // 1) Map your qgis2web layer variables to friendly names.
   //    Replace the right-hand side if your variables have different names.
   //    TIP: In index.html, search for:  var layer_   to discover names.
-  const registry = {
-    "Buildings": (window.layer_Buildings_1 || window.layer_Buildings || null),
-    "Vegetation": (window.layer_Vegetation_2 || window.layer_Vegetation || null)
-  };
+const registry = {
+  "Buildings": window.layer_6Buildingsbuildings_1,
+  "Vegetation": window.layer_2Vegetationvegetation_5
+};
 
   // Remove missing layers from the registry
   Object.keys(registry).forEach(k => { if(!registry[k]) delete registry[k]; });
