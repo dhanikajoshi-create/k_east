@@ -651,6 +651,101 @@ const registry = {
     els.list.innerHTML = '<div class="row"><span class="val">⚠️ Update the layer mapping in the script (search for <b>var layer_</b> in index.html) so Buildings/Vegetation point to your actual layer variables.</span></div>';
   }
 })();
+  // 1) Map your qgis2web layers to names for the dropdown
+  const layerMap = {
+    "Buildings": layer_6Buildingsbuildings_1,
+    "Open Spaces": layer_5Openopenspaces_2,
+    "Roads": layer_Roads_3,
+    "Waterways": layer_3Waterwayswaterways_4,
+    "Vegetation": layer_2Vegetationvegetation_5
+  };
+
+  const layerSelect = document.getElementById("layerSelect");
+  const attributeSelect = document.getElementById("attributeSelect");
+  const indexList = document.getElementById("indexList");
+  const stats = document.getElementById("stats");
+  const searchInput = document.getElementById("searchInput");
+
+  // Fill layer dropdown
+  Object.keys(layerMap).forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    layerSelect.appendChild(opt);
+  });
+
+  // Update attribute dropdown when layer changes
+  layerSelect.addEventListener("change", () => {
+    const layer = layerMap[layerSelect.value];
+    if (!layer) return;
+    const features = layer.toGeoJSON().features;
+    const props = features.length ? Object.keys(features[0].properties) : [];
+    attributeSelect.innerHTML = "";
+    props.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      attributeSelect.appendChild(opt);
+    });
+    attributeSelect.value = props[0] || "";
+    refreshList();
+  });
+
+  // Refresh list when attribute changes or filter changes
+  attributeSelect.addEventListener("change", refreshList);
+  searchInput.addEventListener("input", refreshList);
+
+  function refreshList(){
+    indexList.innerHTML = "";
+    const layer = layerMap[layerSelect.value];
+    if (!layer) return;
+    const attr = attributeSelect.value;
+    const filter = searchInput.value.toLowerCase();
+    const features = layer.toGeoJSON().features;
+    let count = 0;
+
+    features.forEach((f, i) => {
+      const val = f.properties[attr];
+      if (val == null) return;
+      const text = String(val);
+      if (filter && !text.toLowerCase().includes(filter)) return;
+
+      count++;
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `<span class="seq">${count}</span><span class="val">${text}</span>`;
+      row.addEventListener("click", () => {
+        const lyr = L.geoJSON(f).addTo(map);
+        const bounds = lyr.getBounds();
+        map.fitBounds(bounds.pad(0.5));
+        lyr.eachLayer(l => l.openPopup && l.openPopup());
+        setTimeout(() => map.removeLayer(lyr), 1500); // clean up temp highlight
+      });
+      indexList.appendChild(row);
+    });
+
+    stats.textContent = `${count} items`;
+  }
+
+  // Collapse toggle
+  const panel = document.getElementById("attrPanel");
+  const toggle = document.getElementById("attrPanelToggle");
+  toggle.addEventListener("click", () => {
+    if (panel.classList.contains("collapsed")) {
+      panel.classList.remove("collapsed");
+      panel.querySelector(".body").style.display = "flex";
+      toggle.textContent = "–";
+    } else {
+      panel.classList.add("collapsed");
+      panel.querySelector(".body").style.display = "none";
+      toggle.textContent = "+";
+    }
+  });
+
+  // Initialize first layer
+  layerSelect.value = "Buildings";
+  layerSelect.dispatchEvent(new Event("change"));
+})();
 </script>
  </body>
 </html>
