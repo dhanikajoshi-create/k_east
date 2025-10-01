@@ -747,5 +747,108 @@ const registry = {
   layerSelect.dispatchEvent(new Event("change"));
 })();
 </script>
- </body>
+ <script>
+// 1) Map your exported qgis2web layers into a lookup object
+const layersConfig = {
+  "Buildings": layer_6Buildingsbuildings_1,
+  "Open Spaces": layer_5Openopenspaces_2,
+  "Roads": layer_Roads_3,
+  "Waterways": layer_3Waterwayswaterways_4,
+  "Vegetation": layer_2Vegetationvegetation_5
+  // If you want Boundary later, add it here
+};
+
+// 2) Create UI panel
+const panel = document.createElement("div");
+panel.style.position = "absolute";
+panel.style.top = "10px";
+panel.style.left = "10px";
+panel.style.zIndex = 1000;
+panel.style.background = "white";
+panel.style.padding = "10px";
+panel.style.width = "250px";
+panel.style.fontFamily = "sans-serif";
+panel.style.borderRadius = "8px";
+panel.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
+panel.innerHTML = `
+  <strong>Data Viewer</strong><br>
+  <label>Layer:</label><br>
+  <select id="layerSelect" style="width:100%; margin-bottom:5px"></select>
+  <label>Attribute:</label><br>
+  <select id="attributeSelect" style="width:100%; margin-bottom:5px"></select>
+`;
+document.body.appendChild(panel);
+
+// 3) Populate layer dropdown
+const layerSelect = document.getElementById("layerSelect");
+const attributeSelect = document.getElementById("attributeSelect");
+
+Object.keys(layersConfig).forEach(layerName => {
+  let opt = document.createElement("option");
+  opt.value = layerName;
+  opt.innerHTML = layerName;
+  layerSelect.appendChild(opt);
+});
+
+// 4) Function to refresh attributes based on selected layer
+function updateAttributes(layerName) {
+  attributeSelect.innerHTML = "";
+  const layer = layersConfig[layerName];
+  if (layer && layer.toGeoJSON().features.length > 0) {
+    const props = layer.toGeoJSON().features[0].properties;
+    Object.keys(props).forEach(attr => {
+      let opt = document.createElement("option");
+      opt.value = attr;
+      opt.innerHTML = attr;
+      attributeSelect.appendChild(opt);
+    });
+  }
+}
+
+// 5) Function to show only one layer at a time
+function showOnlyLayer(layerName) {
+  Object.keys(layersConfig).forEach(name => {
+    map.removeLayer(layersConfig[name]); // hide all
+  });
+  map.addLayer(layersConfig[layerName]); // show selected
+}
+
+// 6) Function to style layer by attribute
+function styleLayerByAttribute(layer, attr) {
+  if (!layer) return;
+  layer.setStyle(function(feature) {
+    let val = feature.properties[attr];
+    // Simple demo styling: numeric → red/yellow scale
+    let fill = "lightgrey";
+    if (!isNaN(val)) {
+      fill = val > 50 ? "red" : val > 20 ? "orange" : "yellow";
+    }
+    return {
+      color: "#333",
+      weight: 1,
+      fillColor: fill,
+      fillOpacity: 0.6
+    };
+  });
+}
+
+// 7) Event listeners
+layerSelect.addEventListener("change", function() {
+  const selectedLayer = layerSelect.value;
+  showOnlyLayer(selectedLayer);
+  updateAttributes(selectedLayer);
+});
+
+attributeSelect.addEventListener("change", function() {
+  const selectedLayer = layerSelect.value;
+  const attr = attributeSelect.value;
+  styleLayerByAttribute(layersConfig[selectedLayer], attr);
+});
+
+// 8) Initialize with first layer
+layerSelect.value = Object.keys(layersConfig)[0];
+showOnlyLayer(layerSelect.value);
+updateAttributes(layerSelect.value);
+</script>
+	</body>
 </html>
